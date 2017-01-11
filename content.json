@@ -1,30 +1,136 @@
 {
  "address": "1JeHa67QEvrrFpsSow82fLypw8LoRcmCXk",
  "description": "Complementary & alternative money demo",
+ "domain": "moneynetwork.bit",
+ "favicon": "favicon.ico",
  "files": {
+  "LICENSE": {
+   "sha512": "d281feecb7d1218e1aea8269f288fcd63385da1a130681fadae77262637cb65f",
+   "size": 18027
+  },
   "README.md": {
-   "sha512": "3e521904449e2cd5e0f066ebf631aa903cf266608c86356df69606c382179239",
-   "size": 2690
+   "sha512": "bd1fcd7e93c194ef219b5878b05849163e2c4e2f259a27306cace51e1b24e561",
+   "size": 2615
   },
   "css/all.css": {
-   "sha512": "9aa91724464849256c3e7571a2aff5288233157acd17317ee1e855d2b215dfd5",
-   "size": 400771
+   "sha512": "fbe337730da78c0af261fe482dba44920f780df69d4c881b313ccdeb0a94a04c",
+   "size": 402127
   },
   "dbschema.json": {
-   "sha512": "b6d1afcf2518a481d05ce6b1c42ad7325cbf1e20c916d940cff85b37b801d207",
-   "size": 2356
+   "sha512": "88b3d8620a743f3a815c9a6f334eddbeb4a265284fd41c8b8b86af18580c23a5",
+   "size": 2798
+  },
+  "favicon.ico": {
+   "sha512": "b1b7e2667c8ed0376d756fdb27ab0aeb9881275cf29b0ef7510aa47271b9ec4e",
+   "size": 4286
   },
   "index.html": {
-   "sha512": "f5b2ed043f1b68eeb08208b5e9beb7de687155b154cdee7960cda340e6a3a0b3",
-   "size": 58677
+   "sha512": "a71b35a0ffde4c37cc102b13202473150adc57124614bffafdc94815846b4f32",
+   "size": 113573
+  },
+  "js-external/10-jquery.js": {
+   "sha512": "061f9fa1e47d489b721d76abff0f7039e133294575237f8c64c02d54efdbf75d",
+   "size": 293431
+  },
+  "js-external/20-bootstrap-collapse.js": {
+   "sha512": "15413c8eb4b4cf3ad637979a838fd286c2a8229084661e751f20433af332d9f9",
+   "size": 4737
+  },
+  "js-external/25-bitcoinjs.js": {
+   "sha512": "302e1da4db0b63dbe8f9a50ec4a6c35bc57f674dc7e38998dc13b932ffec4fd4",
+   "size": 362852
+  },
+  "js-external/28-Class.js": {
+   "sha512": "8014eda4e82e67beaafe11725f78a668538b293b8221d953a49f615cce0f469a",
+   "size": 1639
+  },
+  "js-external/29-Uploadable.js": {
+   "sha512": "7790a9caf70f415ccfbcd4a3f7cfe324be66b4beed4957f32b85ce1b10916c76",
+   "size": 4814
+  },
+  "js-external/30-ZeroFrame.js": {
+   "sha512": "7d22d0137a9c2b43a638555b5baf3d3e6dd3e4c9b28a8b9e8068c2f306f384fd",
+   "size": 6842
+  },
+  "js-external/40-angular.js": {
+   "sha512": "1ca6b3ee1ec704fce10b0d01d5326837bbbc58ae246b525f898842725c9e745f",
+   "size": 1187559
+  },
+  "js-external/41-angular-route.js": {
+   "sha512": "c4d57762f28bdbc8f32677de8c4cbc09f11fa0ec259d498c1530ca7951e35233",
+   "size": 38847
+  },
+  "js-external/42-angular-sanitize.js": {
+   "sha512": "877ed70e08e6fa8e5e3be35492cc3f71628e54f46f8e49d1209e320b6921313f",
+   "size": 26833
+  },
+  "js-external/43-ng-infinite-scroll.js": {
+   "sha512": "e581cdf572e1f129fb0b07e7f42b157ba8c0b80391a8bb3720d0a2b3055e3e27",
+   "size": 7429
+  },
+  "js-external/50-CryptoJS-license.js": {
+   "sha512": "c8f26059ae5eb3f48ec38658b1a334ebb5cc8044c8a6b7ebc7a15cb4f5b06674",
+   "size": 1477
+  },
+  "js-external/51-CryptoJS-core.js": {
+   "sha512": "8946e997e438276c184901466ccf6a3b5db7998a83c0a1465812ea4386367f24",
+   "size": 20762
+  },
+  "js-external/52-CryptoJS-md5.js": {
+   "sha512": "e9870ecdcf5bc52bb393f745e17fa2dce95d2881b8935c816cceebb2f3646f92",
+   "size": 8984
+  },
+  "js-external/53-CryptoJS-evpkdf.js": {
+   "sha512": "f56b5d0b1bf9f1c996889524827b2603e3d5b671ebc8d058c7e945860f80dea2",
+   "size": 3586
+  },
+  "js-external/54-CryptoJS-enc-base64.js": {
+   "sha512": "fcbab458739e5722ed88cee4914584d81835634df5a4b55f550a8dc6c5fc6a88",
+   "size": 3331
+  },
+  "js-external/55-CryptoJS-cipher-core.js": {
+   "sha512": "63c8318b0b0ef3aa9e2149fb8bf129ce3151ad67b97155bde0a5754c26dd4ec6",
+   "size": 28325
+  },
+  "js-external/56-CryptoJS-aes.js": {
+   "sha512": "74cec696da34937f18165d574d64b41736a5efcc7f27873b313ca7e76dcef1ce",
+   "size": 7873
+  },
+  "js-external/57-CryptoJS-sha256.js": {
+   "sha512": "9c6690630ee323cd40c3245e1f7118632be57dfcfc6ac0f3adfbfe16c1a0485b",
+   "size": 5125
+  },
+  "js-external/60-jsencrypt.js": {
+   "sha512": "a0c63d860086ac3dc2109a144575af4edef3488f800c3d40f3639c3c15208e51",
+   "size": 130728
+  },
+  "js-external/61-lz-string.js": {
+   "sha512": "7b597eec4d7f1763f1d5ef9bd797d0823103022eceb76c35f28c6fcb60aaddad",
+   "size": 16075
+  },
+  "js-external/62-tv4.js": {
+   "sha512": "0eeff9151d985aa898171181d7a9c74e10fbc9f66a1f58cebe3d94ddeed6d549",
+   "size": 52514
+  },
+  "js-external/63-Blob.js": {
+   "sha512": "a340b7ec2ec14ef39045e77c32158af62107f8e60004985549c636b43298730a",
+   "size": 6144
+  },
+  "js-external/64-FileSaver.js": {
+   "sha512": "50e01bb6a3eb3abbdcf5b8ef44a26dbc66283249a5ff806872448c644959bb68",
+   "size": 5965
+  },
+  "js-external/90-ui-bootstrap-tpls-2.1.3.js": {
+   "sha512": "7c6ced7ae68ddd3b8f88a24ff43f450c02b03a540a82def53e4704d32d66fe69",
+   "size": 266861
   },
   "js-external/pngencoder.js": {
    "sha512": "ecaadaad552d2610336995b48360253cd6d847b6aa590fc3d96e7245a5d5fe11",
    "size": 53602
   },
   "js/all.js": {
-   "sha512": "27ebfdb448cc53d5f3c28c0af1e5273c426c55b192e66aad92ad99ac7220eb3f",
-   "size": 2765271
+   "sha512": "1af33fe870c7c48b11d770e925a412242c9216fe90473a7161c98548c6df7bda",
+   "size": 734922
   },
   "public/css/fonts/glyphicons-halflings-regular.eot": {
    "sha512": "efc910c96b9f5c58ea11a84577cf60ae995503b1ee670bb7e7d4a413b7403769",
@@ -86,33 +192,41 @@
    "sha512": "9c83f18082fbc50566dbb6684feb95ae5d0f83b951063280c9a7314be0115653",
    "size": 4256
   },
-  "source.zip": {
-   "sha512": "da3142576e27b3b1889df6bbdca9f191a34978dd31b422e6e20b0fbd4b2d95f0",
-   "size": 913694
+  "public/images/avatarz.png": {
+   "sha512": "5b8147b42da6c0b6b466510bd010d898fbcf7e3a88f1a74804b0c761cfa936e2",
+   "size": 1622
+  },
+  "public/images/image_failed.gif": {
+   "sha512": "022717cc29c64cf27e5fdbb1340a3e6c0183497b74450581e31d25b26e795de1",
+   "size": 910
+  },
+  "public/images/image_loading.gif": {
+   "sha512": "c80a27ebf9b6110d3020376867f4462904dcebfeecdb6da0514e90192e4d3fcf",
+   "size": 11755
   }
  },
  "ignore": "((js|css)/(?!all.(js|css))|.idea|.git|data/.*db|data/users/.*/.*)",
  "includes": {
   "data/users/content.json": {
    "signers": [
-    "1CCiJ97XHgVeJrkbnzLgfXvYRr8QEWxnWF"
+    "16R2WrLv3rRrxa8Sdp4L5a1fi7LxADHFaH"
    ],
    "signers_required": 1
   }
  },
  "inner_path": "content.json",
- "modified": 1478951847.931181,
+ "modified": 1484066054,
  "postmessage_nonce_security": true,
  "sign": [
-  101847774951263150078370066623822848073630316625167795638707782571571294801985,
-  73361163488443954851732884963054543454970824571913599284031799016097885325103
+  76892747337734324453114218406287896176148628332859539994178947357141385279231,
+  9213365680026136035902860586880674060408816132893541416716390472646010665659
  ],
  "signers_sign": "HKCAdoe7JxILoKnbuGqPlHvPjsCAsby4hJg9BZ4v3tsVR9vQ3vfXwOzy0FdL+Os9uc7Jlp9vLCONSIKKh/gI1Y4=",
  "signs": {
-  "1JeHa67QEvrrFpsSow82fLypw8LoRcmCXk": "G3byo0JISKU4o8hvlLCas1yVh+2HE1q7C+UP2vW+W8wIGrK7JOPimSlj2DC2S8ShWI9pOmk5FzhdjxSdipLrWGY="
+  "1JeHa67QEvrrFpsSow82fLypw8LoRcmCXk": "HGpQo7E9yz3a4bVbz74Urq3KgpTUa1EZXpQBw7pWXiq6R6oufvLagSfyKfAhC5cg6yxWh2/GWkcwJUUy8Pfw6E4="
  },
  "signs_required": 1,
  "title": "Money Network",
  "viewport": "width=device-width, initial-scale=1.0",
- "zeronet_version": "0.5.0"
+ "zeronet_version": "0.5.1"
 }

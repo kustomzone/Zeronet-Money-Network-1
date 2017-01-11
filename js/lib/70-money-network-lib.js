@@ -20,7 +20,6 @@ if (!Array.prototype.indexOf) {
     };
 }
 
-
 // helper functions
 var MoneyNetworkHelper = (function () {
 
@@ -63,6 +62,10 @@ var MoneyNetworkHelper = (function () {
         local_storage_functions.length = 0 ;
     }) ;
 
+    function ls_get () {
+        return local_storage ;
+    }
+
     // write JS copy of local storage back to ZeroFrame API
     function ls_save() {
         var pgm = module + '.ls_save: ' ;
@@ -72,9 +75,79 @@ var MoneyNetworkHelper = (function () {
             var pgm = module + '.ls_save wrapperSetLocalStorage callback: ';
             // console.log(pgm + 'OK');
         }) ;
-    } // ls_save
+    } // key
+
+    // delete all localStorage data
+    function ls_clear() {
+        for (var key in local_storage) delete local_storage[key] ;
+        ls_save()
+    } // ls_clear
 
 
+    // localStorage export/import. Used in Account page / userCtrl
+    // https://developer.mozilla.org/en-US/docs/Web/API/WindowBase64/btoa#Unicode_strings
+    // ucs-2 string to base64 encoded ascii
+    function utoa(str) {
+        return window.btoa(unescape(encodeURIComponent(str)));
+    }
+    // base64 encoded ascii to ucs-2 string
+    function atou(str) {
+        return decodeURIComponent(escape(window.atob(str)));
+    }
+
+    var ls_export_import_test ;
+    function ls_export (filename) {
+        var pgm = module + '.ls_export: ' ;
+        var ls, ls_str, ls_str64, blob ;
+        // localStorage only export
+        ls = {
+            timestamp: new Date().getTime(),
+            local_storage: local_storage
+        } ;
+        ls_str = JSON.stringify(ls);
+        ls_export_import_test = ls_str ;
+        // console.log(pgm + 'ls_str = ' + ls_str) ;
+        ls_str64 = utoa(ls_str) ;
+        blob = new Blob([ls_str64], {type: "text/plain;charset=utf-8"});
+        // console.log(pgm + 'filename = ' + filename) ;
+        saveAs(blob, filename);
+    } // ls_export
+    function ls_import (file, cb) {
+        var pgm = module + '.ls_import: ' ;
+        var reader, ls_str64, ls_str, ls, key, error ;
+        reader = new FileReader();
+        reader.onload = function () {
+            ls_str64 = reader.result;
+            ls_str = atou(ls_str64) ;
+            // console.log(pgm + 'ls_str = ' + ls_str) ;
+            if (ls_export_import_test) {
+                if (ls_str == ls_export_import_test) console.log(pgm + 'Test OK. import == export') ;
+                else console.log(pgm + 'Test failed. import != export') ;
+            }
+            ls = JSON.parse (ls_str).local_storage ;
+            if (!ls) {
+                error = 'no localStorage data was found in file' ;
+                console.log(pgm + error) ;
+                if (cb) cb(error) ;
+                return ;
+            }
+            // import ok. overwrite existing localStorage
+            for (key in local_storage) delete local_storage[key] ;
+            for (key in ls) local_storage[key] = ls[key] ;
+            ls_save() ;
+            // callback. for example client_logout
+            if (cb) cb(null) ;
+        }; // onload
+        try {
+            reader.readAsText(file);
+        }
+        catch (err) {
+            error = 'import failed: ' + err.message ;
+            console.log(pgm + error) ;
+            if (cb) cb(error) ;
+            return ;
+        }
+    } // ls_import
 
     // initialize array with public avatars from public/images/avatar
     var public_avatars = [] ;
@@ -83,7 +156,7 @@ var MoneyNetworkHelper = (function () {
             var pgm = module + '.load_public_avatars fileGet callback: ';
             if (res) res = JSON.parse(res) ;
             else res = { files: {} } ;
-            for (key in res.files) {
+            for (var key in res.files) {
                 if (!res.files.hasOwnProperty(key)) continue ;
                 if (key.substr(0,20) == 'public/images/avatar') public_avatars.push(key.substr(20,key.length-20)) ;
             } // for key
@@ -95,293 +168,32 @@ var MoneyNetworkHelper = (function () {
         return public_avatars ;
     }
 
-
-    // search ZeroNet for new potential contacts with matching search words
-    // add/remove new potential contacts to/from local_storage_contacts array (MoneyNetworkService and ContactCtrl)
-    // fnc_when_ready - callback - execute when local_storage_contacts are updated
-    function z_contact_search (local_storage_contacts, fnc_when_ready) {
-        var pgm = module + '.z_contact_search: ' ;
-
-        // any relevant user info? User must have tags with privacy Search or Hidden to search network
-        var user_info, my_search_query, i, row, error ;
-        var user_info = getItem('user_info') ;
-        if (user_info) user_info = JSON.parse(user_info) ;
-        else user_info = [] ;
-        var my_search_query = '' ;
-        for (i=0 ; i<user_info.length ; i++) {
-            row = user_info[i] ;
-            if (['Search','Hidden'].indexOf(row.privacy) == -1) continue ;
-            row.tag = row.tag.replace(/'/g, "''") ; // escape ' in strings
-            row.value = row.value.replace(/'/g, "''") ; // escape ' in strings
-            if (my_search_query) my_search_query = my_search_query + " union all" ;
-            my_search_query = my_search_query + " select '" + row.tag + "' as tag, '" + row.value + "' as value"
+    // return Last online from contact search array. Only value with typeof = number
+    function get_last_online (contact) {
+        if (!contact.search) contact.search = [] ;
+        for (var i=0 ; i<contact.search.length ; i++) {
+            if (typeof contact.search[i].value == 'number') return contact.search[i].value ;
         }
-        if (!my_search_query) {
-            error = "No search tags in user profile. Please add some tags with privacy Search and/or Hidden and try again" ;
-            console.log(pgm + error);
-            // console.log(pgm + 'user_info = ' + JSON.stringify(user_info));
-            // console.log(pgm + 'my_search_query = ' + my_search_query);
-            // ZeroFrame.cmd("wrapperNotification", ["info", error, 3000]);
-            return ;
-        }
+        return null ;
+    }
 
-        // check ZeroFrame status. Is ZeroNet ready?
-        var retry_z_contact_search = function () {
-            z_contact_search (local_storage_contacts, fnc_when_ready);
-        };
-        if (!ZeroFrame.site_info) {
-            // ZeroFrame websocket connection not ready. Try again in 5 seconds
-            console.log(pgm + 'ZeroFrame.site_info is not ready. Try again in 5 seconds. Refresh page (F5) if problem continues') ;
-            setTimeout(retry_z_contact_search,5000); // outside angularjS - using normal setTimeout function
-            return ;
-        }
-        if (!ZeroFrame.site_info.cert_user_id) {
-            console.log(pgm + 'Auto login process to ZeroNet not finished. Maybe user forgot to select cert. Checking for new contacts in 1 minute');
-            ZeroFrame.cmd("certSelect", [["moneynetwork"]]);
-            setTimeout(retry_z_contact_search,60000);// outside angularjS - using normal setTimeout function
-            return ;
-        }
-
-        // find json_id and user_seq for current user.
-        // must use search words for current user
-        // must not return search hits for current user
-        var directory = 'users/' + ZeroFrame.site_info.auth_address ;
-        var pubkey = getItem('pubkey') ;
-        var query = "select json.json_id, users.user_seq from json, users " +
-            "where json.directory = '" + directory + "' " +
-            "and users.json_id = json.json_id " +
-            "and users.pubkey = '" + pubkey + "'";
-        // console.log(pgm + 'query 1 = ' + query) ;
-        ZeroFrame.cmd("dbQuery", [query], function(res) {
-            var pgm = module + '.z_contact_search dbQuery callback 1: ' ;
-            var error ;
-            // console.log(pgm + 'res = ' + JSON.stringify(res)) ;
-            if (res.error) {
-                ZeroFrame.cmd("wrapperNotification", ["error", "Search for new contacts failed: " + res.error, 5000]);
-                console.log(pgm + "Search for new contacts failed: " + res.error) ;
-                console.log(pgm + 'query = ' + query) ;
-                return ;
+    function set_last_online (contact, last_online) {
+        if (!contact.search) contact.search = [] ;
+        for (var i=0 ; i<contact.search.length ; i++) {
+            if (typeof contact.search[i].value == 'number') {
+                contact.search[i].value = last_online ;
+                return
             }
-            if (res.length == 0) {
-                // current user not in data.users array. must be a new user (first save). Try again in 3 seconds
-                console.log(pgm + 'current user not in data.users array. must be a new user (first save). Try again in 3 seconds');
-                // ZeroFrame.cmd("wrapperNotification", ["info", "Updating ZeroNet database. Please wait", 3000]);
-                setTimeout(retry_z_contact_search,3000) ;
-                return ;
-            }
-            var json_id = res[0].json_id ;
-            var user_seq = res[0].user_seq ;
-            // console.log(pgm + 'json_id = ' + json_id + ', user_seq = ' + user_seq) ;
-            // find other clients with matching search words using sqlite like operator
-            // Search: tags shared public on ZeroNet. Hidden: tags stored only in localStorage
-
-            // console.log(pgm + 'my_search = ' + my_search) ;
-            // get contact info: user_seq, pubkey, auth_address, cert_user_id, modified and avatars (users & files)
-            // notes:
-            // -  modified is from content.json - identical for users with identical cert id - deprecated
-            // -  timestamp is from status.json - one timestamp for each user - preferred if exists
-            // todo: should remove modified usage when all active users have a timestamp. after 5/12-16
-            var contacts_query =
-                "select" +
-                "  users.user_seq, users.pubkey, users.avatar as users_avatar," +
-                "  data_json.directory,  substr(data_json.directory, 7) as auth_address, data_json.json_id as data_json_id," +
-                "  content_json.json_id as content_json_id," +
-                "  keyvalue1.value as cert_user_id," +
-                "  keyvalue2.value as modified," +
-                "  (select substr(files.filename,8)" +
-                "   from files, json as avatar_json " +
-                "   where files.filename like 'avatar%'" +
-                "   and avatar_json.json_id = files.json_id" +
-                "   and avatar_json.directory = data_json.directory) as files_avatar," +
-                "  (select status.timestamp" +
-                "   from json as status_json, status" +
-                "   where status_json.directory = content_json.directory" +
-                "   and status_json.file_name = 'status.json'"+
-                "   and status.json_id = status_json.json_id" +
-                "   and status.user_seq = users.user_seq) as timestamp " +
-                "from users, json as data_json, json as content_json, keyvalue as keyvalue1, keyvalue as keyvalue2 " +
-                "where users.pubkey <> '" + pubkey + "'" +
-                "and data_json.json_id = users.json_id " +
-                "and content_json.directory = data_json.directory " +
-                "and content_json.file_name = 'content.json' " +
-                "and keyvalue1.json_id = content_json.json_id " +
-                "and keyvalue1.key = 'cert_user_id' " +
-                "and keyvalue2.json_id = content_json.json_id " +
-                "and keyvalue2.key = 'modified'" ;
-            // console.log(pgm + 'contacts_query = ' + contacts_query) ;
-
-            // new query with cert_user_id
-            query =
-                "select" +
-                "  my_search.tag as my_tag, my_search.value as my_value," +
-                "  contacts.pubkey as other_pubkey, contacts.auth_address as other_auth_address," +
-                "  contacts.cert_user_id as other_cert_user_id, contacts.modified as other_user_modified," +
-                "  contacts.timestamp as other_user_timestamp," +
-                "  search.tag as other_tag, search.value as other_value, " +
-                "  contacts.users_avatar as other_users_avatar, contacts.files_avatar as other_files_avatar " +
-                "from (" + my_search_query + ") as my_search, " +
-                "     search, (" + contacts_query + ") as contacts " +
-                "where (my_search.tag like search.tag and  my_search.value like search.value " +
-                "or search.tag like my_search.tag and search.value like my_search.value) " +
-                "and not (search.json_id = " + json_id + " and search.user_seq = " + user_seq + ") " +
-                "and contacts.data_json_id = search.json_id " ;
-            // console.log(pgm + 'query = ' + query) ;
-            ZeroFrame.cmd("dbQuery", [query], function(res) {
-                var pgm = module + '.z_contact_search dbQuery callback 2: ';
-                // console.log(pgm + 'res = ' + JSON.stringify(res));
-                if (res.error) {
-                    ZeroFrame.cmd("wrapperNotification", ["error", "Search for new contacts failed: " + res.error, 5000]);
-                    console.log(pgm + "Search for new contacts failed: " + res.error) ;
-                    console.log(pgm + 'query = ' + query) ;
-                    return;
-                }
-                if (res.length == 0) {
-                    // current user not in data.users array. must be an user without any search words in user_info
-                    ZeroFrame.cmd("wrapperNotification", ["info", "No new contacts were found. Please add/edit search/hidden words and try again", 3000]);
-                    return;
-                }
-                var unique_id, unique_ids = [], res_hash = {}, ignore, j, last_updated, modified_deprecated = 0 ;
-                for (var i=0 ; i<res.length ; i++) {
-                    // check contacts on ignore list
-                    ignore=false ;
-                    for (j=0 ; (!ignore && (j<local_storage_contacts.length)) ; j++) {
-                        if (local_storage_contacts[j].type != 'ignore') continue ;
-                        if (res[i].auth_address == local_storage_contacts[j].auth_address) ignore=true ;
-                        if (res[i].pubkey == local_storage_contacts[j].pubkey) ignore=true ;
-                    }
-                    if (ignore) continue ;
-                    // add search match to res_hash
-                    // unique id is sha256 signatur of ZeroNet authorization and localStorage authorization
-                    // note many to many relation in the authorization and contact ids:
-                    // - a ZeroNet id can have been used on multiple devices (localStorage) when communicating with ZeroNet
-                    // - public/private localStorage key pairs can have been exported to other devices
-                    unique_id = CryptoJS.SHA256(res[i].other_auth_address + '/'  + res[i].other_pubkey).toString();
-                    res[i].other_unique_id = unique_id;
-                    if (res[i].other_user_timestamp) last_updated = Math.round(res[i].other_user_timestamp / 1000) ;
-                    else {
-                        last_updated = res[i].other_user_modified ;
-                        modified_deprecated++ ;
-                    }
-                    if (unique_ids.indexOf(res[i].other_unique_id)==-1) unique_ids.push(res[i].other_unique_id) ;
-                    if (!res_hash.hasOwnProperty(unique_id)) res_hash[unique_id] = {
-                        type: 'new',
-                        auth_address: res[i].other_auth_address,
-                        cert_user_id: res[i].other_cert_user_id,
-                        pubkey: res[i].other_pubkey,
-                        avatar: res[i].other_files_avatar || res[i].other_users_avatar,
-                        search: [{ tag: 'Last updated', value: last_updated, privacy: 'Search', row: 1}]
-                    };
-                    res_hash[unique_id].search.push({
-                        tag: res[i].other_tag,
-                        value: res[i].other_value,
-                        privacy: 'Search',
-                        row: res_hash[unique_id].search.length+1
-                    }) ;
-                }
-
-                if (modified_deprecated == 0) {
-                    console.log(pgm + 'Modified_deprecated. All contacts from search have a status timestamp (status != new). Must also check ls_load_contacts (type != new)') ;
-                    // console.log(pgm + 'res = ' + JSON.stringify(res));
-                }
-                else {
-                    console.log(pgm + 'Modified_deprecated. ' + modified_deprecated + ' contacts from search does not have a status timestamp (status != new).') ;
-                }
-
-
-                // skipping UI notifications.
-                // if (unique_ids.length == 1) console.log(pgm + "1 new contact");
-                // else console.log(pgm + unique_ids.length + " new contacts");
-
-                // insert/update/delete new contacts in local_storage_contacts (type=new)
-                var found_unique_ids = [] ;
-                for (i=local_storage_contacts.length-1 ; i>= 0 ; i--) {
-                    // if (local_storage_contacts[i].type != 'new') continue ;
-                    unique_id = local_storage_contacts[i].unique_id ;
-                    if (!res_hash.hasOwnProperty(unique_id)) {
-                        // contact no longer matching search words. Delete contact if no messages
-                        if ((local_storage_contacts[i].type == 'new') && (local_storage_contacts[i].messages.length == 0)) local_storage_contacts.splice(i,1) ;
-                        continue ;
-                    }
-                    found_unique_ids.push(unique_id) ;
-                    // update contact with new search words
-                    local_storage_contacts[i].cert_user_id = res_hash[unique_id].cert_user_id ;
-                    if (res_hash[unique_id].avatar) local_storage_contacts[i].avatar = res_hash[unique_id].avatar ;
-                    for (j=local_storage_contacts[i].search.length-1 ; j >= 0 ; j--) {
-                        if (local_storage_contacts[i].search[j].privacy == 'Search') {
-                            local_storage_contacts[i].search.splice(j,1);
-                        }
-                    }
-                    for (j=0 ; j<res_hash[unique_id].search.length ; j++) {
-                        local_storage_contacts[i].search.push(res_hash[unique_id].search[j]) ;
-                    }
-                    for (j=0 ; j<local_storage_contacts[i].search.length ; j++) local_storage_contacts[i].search[j].row = j+1 ;
-                } // i
-                var new_contact ;
-                for (unique_id in res_hash) {
-                    if (found_unique_ids.indexOf(unique_id) != -1) continue ;
-                    // insert new contact
-                    new_contact = {
-                        unique_id: unique_id,
-                        type: 'new',
-                        auth_address: res_hash[unique_id].auth_address,
-                        cert_user_id: res_hash[unique_id].cert_user_id,
-                        avatar: res_hash[unique_id].avatar,
-                        pubkey: res_hash[unique_id].pubkey,
-                        search: res_hash[unique_id].search,
-                        messages: [],
-                        outbox_sender_sha256: {},
-                        inbox_zeronet_msg_id: [],
-                        inbox_last_sender_sha256: null,
-                        inbox_last_sender_sha256_at: 0
-                    };
-                    if (!new_contact.avatar) {
-                        // assign random avatar
-                        if (public_avatars.length == 0) {
-                            console.log(pgm + 'Error. Public avatars array are not ready. Using 1.png as avatar') ;
-                            new_contact.avatar = '1.png' ;
-                        }
-                        else {
-                            var index = Math.floor(Math.random() * public_avatars.length);
-                            new_contact.avatar = public_avatars[index] ;
-                        }
-                    }
-                    local_storage_contacts.push(new_contact);
-                    // console.log(pgm + 'new_contact = ' + JSON.stringify(new_contact));
-                }
-                // console.log(pgm + 'local_storage_contacts = ' + JSON.stringify(local_storage_contacts));
-                //local_storage_contacts = [{
-                //    "unique_id": "4fef4f9678487b98baf77c6808f9a67651968534133b570677c9490406c4b5cc",
-                //    "type": "new",
-                //    "auth_address": "1PcU45foygsjzGmGhWSpsa7KMRnZJ4J3tr",
-                //    "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBITANBgkqhkiG9w0BAQEFAAOCAQ4AMIIBCQKCAQB4k3F/Trrl31HKwlzhCqui\nEcPlRt1FaIGoeemPJ5rlhGedJfHS3DGkUOZOqgm0lGQHqAeRhktvnZcFAcrQDKkz\nWBA4m1oFBumBM3M/x/aqDDsHNFqZD4fPhz9DpEbpgHMODCZLNLh7Z88I7FOnGtih\nR3Q/h4DSa0NzGdHiYYdN69uLzZQydjByJcM18oaYIdw1xdYEgGBOFKa6gk2si3Je\nHraO9diGqsofLNFyAenVkwvFQzQbFZaJuTllSlDHpCNUFVBnIBWpGak5gxEzS7eH\npW9FXpu96pxV/ACS6EOad05SEr4V02lY5yFs87Edy+Qv6DASg49GP9J6pLOlLeaZ\nAgMBAAE=\n-----END PUBLIC KEY-----",
-                //    "search": [{"my_tag": "Name", "my_value": "%x%", "other_tag": "Name", "other_value": "%x%"}]
-                //}, {
-                //    "unique_id": "12eabf2eeac1e7d21ee219a0e3b6269a1c074062877c8c9afb4d9ef4be4aa973",
-                //    "type": "new",
-                //    "auth_address": "15xxXSPEf1JN4a5Kna5itWbDVEZfaYTUdD",
-                //    "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvXklRnKF3OQgF3htGDnW\nvx4+t9dvJu2gFktNi/C5PI63ej3+fH8zpa2O3o5Vuwh3ma/WyAQe7NPkl2qL3jow\nHh6d/S5o6vJ6BLBRK2/9SGvsAoKmWeRhsjmGZoIrOH5QRGY82giuEbCmtQVWQZZc\nwoBQSxAJJOULF65ebnoylXmGgFNLwj0vwCZIxx/W8W4n8pOOVcmfbRuX3H1eRmgt\nyWp0rF4bByfEjHcMhwidht60cUMSmO6yDyAgrka1LLb1bF4aZZTrAuQXPe4C4WSq\nvMXCBqw8Opik7rMuFtdW/TGKg076997Oe1bHcCFjjYbJY/0/tJfRL8NlGzlYHAKH\nmwIDAQAB\n-----END PUBLIC KEY-----",
-                //    "search": [{"my_tag": "Name", "my_value": "%x%", "other_tag": "Name", "other_value": "xx"}]
-                //}, {
-                //    "unique_id": "ac5b79accaa6da0298d56b674bfede856b8b27993a781bcc02eed41af5a3e37d",
-                //    "type": "new",
-                //    "auth_address": "1CCiJ97XHgVeJrkbnzLgfXvYRr8QEWxnWF",
-                //    "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqK1lnagsPFXalq9vlL5K\nqqlWBffQYUGptJH7DlLsRff+tc2W62yEQ9+ibBkerZdwrRWsG/thN0lWxeLxTuw5\nmmuF4eLsKoubH/tQJF3XrhOoUn4M7tVtGwL5aN/BG1W22l2F+Rb8Q7Tjtf3Rqdw/\nSk46CWnEZ2x1lEcj9Gl+7q7oSLocjKWURaC61zJbBmYO4Aet+/MktN0gW1VEjpPU\nr1/yEhX5EfDNwDNgOUN43aIJkv5+WcgkiGZf56ZqEauwoKsg9xB2c8v6LTv8DZlj\n+OJ/L99sVXP+QzA2yO/EQIbaCNa3Gu35GynZPoH/ig2yx0BMPu7+4/QLiIqAT4co\n+QIDAQAB\n-----END PUBLIC KEY-----",
-                //    "search": [{"my_tag": "Name", "my_value": "%x%", "other_tag": "Name", "other_value": "xxx"}]
-                //}, {
-                //    "unique_id": "0613de44bde098145199b94a67f5f6a967c28f2490923af1001c82c611cebcab",
-                //    "type": "new",
-                //    "auth_address": "1CCiJ97XHgVeJrkbnzLgfXvYRr8QEWxnWF",
-                //    "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiANtVIyOC+MIeEhnkVfS\nn/CBDt0GWCba4U6EeUDbvf+HQGfY61e9cU+XMbI8sX7b9R5G7T+zdVqbmEIZwNEb\nDn9NIs4PVA/xqemrQUrm3qEHK8iq/+5CUwVeKeb6879FgPL8fSj1E3nNQPnmuh8N\nE+/04PraakAj9A6Z1OE5m+sfC59IDwYTKupB53kX3ZzHMmWtdYYEr08Zq9XHuYMM\nA4ykOqENGvquGjPnTB4ASKfRTLCUC+TsG5Pd+2ZswxxU3zG5v/dczj+l3GKaaxP7\nxEqA8nFYiU7LiA1MUzQlQDYj/t7ckRdjGH51GvZxlGFFaGQv3yqzs7WddZg8sqMM\nUQIDAQAB\n-----END PUBLIC KEY-----",
-                //    "search": [{"my_tag": "Name", "my_value": "%x%", "other_tag": "Name", "other_value": "xxx"}]
-                //}];
-
-                // refresh contacts in angularJS UI
-                fnc_when_ready() ;
-
-            });
+        }
+        contact.search.push({
+            tag: 'Online',
+            value: last_online,
+            privacy: 'Search',
+            row: contact.search.length+1
         }) ;
+    }
 
-    } // z_contact_search
+
 
 
     // values in sessionStorage:
@@ -405,12 +217,14 @@ var MoneyNetworkHelper = (function () {
         password: {session: true, userid: false, compress: false, encrypt: false}, // session password in clear text
         passwords: {session: false, userid: false, compress: false, encrypt: false}, // array with hashed passwords. size = number of accounts
         prvkey: {session: false, userid: true, compress: true, encrypt: true}, // for encrypted user to user communication
-        pubkey: {session: false, userid: true, compress: true, encrypt: false}, // for encrypted user to user communication
+        pubkey: {session: false, userid: true, compress: true, encrypt: false}, // for encrypted user to user communication (JSEncrypt)
+        pubkey2: {session: false, userid: true, compress: true, encrypt: false}, // for encrypted user to user communication (ZeroNet CryptMessage plugin)
         userid: {session: true, userid: false, compress: false, encrypt: false}, // session userid (1, 2, etc) in clear text.
         guestid: {session: false, userid: false, compress: false, encrypt: false}, // guest userid (1, 2, etc). in clear text. Used for cleanup operation
         // user data
         user_info: {session: false, userid: true, compress: true, encrypt: true}, // array with user_info. See user sub page / userCtrl
         contacts: {session: false, userid: true, compress: true, encrypt: true}, // array with contacts. See contacts sub page / contactCtrl
+        deleted_sha256: {session: false, userid: true, compress: true, encrypt: true}, // array with sender_sha256 addresses from deleted contacts
         msg_seq: {session: false, userid: true, compress: true, encrypt: true}, // local msg seq. Sequence. Used in contact.messages
         // todo: avatar and alias is moved to setup but is still used in js code
         avatar: {session: false, userid: true, compress: true, encrypt: false}, // temporary public avatar image. user should upload a custom avatar image
@@ -427,9 +241,9 @@ var MoneyNetworkHelper = (function () {
         c: {compress: 1, encrypt: 0, sequence: 0}, // LZString synchronous compression, not encrypted
         d: {compress: 1, encrypt: 1, sequence: 0}, // LZString synchronous compression, compress => encrypt
         e: {compress: 1, encrypt: 1, sequence: 1}, // LZString synchronous compression, encrypt => compress
-        f: {compress: 2, encrypt: 0, sequence: 0}, // LZMA level 1 asynchronous compression, not encrypted
-        g: {compress: 2, encrypt: 1, sequence: 0}, // LZMA level 1 asynchronous compression, compress => encrypt
-        h: {compress: 2, encrypt: 1, sequence: 1}, // LZMA level 1 asynchronous compression, encrypt => compress
+        f: {compress: 2, encrypt: 0, sequence: 0}, // compression 2, not used, LZMA level 1 asynchronous compression, not encrypted
+        g: {compress: 2, encrypt: 1, sequence: 0}, // compression 2, not used, LZMA level 1 asynchronous compression, compress => encrypt
+        h: {compress: 2, encrypt: 1, sequence: 1}, // compression 2, not used, LZMA level 1 asynchronous compression, encrypt => compress
         i: {compress: 3, encrypt: 0, sequence: 0}, // compression 3, not encrypted (reserved / not implemented)
         j: {compress: 3, encrypt: 1, sequence: 0}, // compression 3, compress => encrypt (reserved / not implemented)
         k: {compress: 3, encrypt: 1, sequence: 1}, // compression 3, encrypt => compress (reserved / not implemented)
@@ -492,74 +306,6 @@ var MoneyNetworkHelper = (function () {
         return LZString.decompressFromUTF16(text);
     }
 
-    // LZMA level 1 compress and decompress strings - not as fast as LZString - runs asynchronous
-    // setItem uses LZString in compression. At end setItem submit a asynchronous task to check if LZMA level 1 compress is better
-    // todo: LZMA disabled until I find a good method to convert byte array output from LZMA.compress into an utf-16 encoded string
-
-    // lzma_compress0 - sequence = 0 - not encrypted or normal compress => encrypt sequence
-    // lzma_compress1 - sequence = 1 - encrypted and reverse encrypt => compress sequence
-
-    // params:
-    // - key and value - original inputs to setItem
-    // - session: true: sessionStorage, false: localStorage
-    // - password: null: not encrypted, != null: encrypted
-    // - length: length of lzstring compressed value (without storage flag)
-    function lzma_compress1(key, value, session, password, length) {
-        var pgm = 'lzma_compress1: ';
-        value = encrypt(value, password);
-        // start compress
-        // var lzma = new LZMA;
-        LZMA.compress(value, 1, function (value) {
-            // compress result received
-            console.log(pgm + 'compress result received. value = ' + value);
-            if (value.length >= length) return;
-            // lzma compress sequence 2 was better than lzstring compress and/or lzma compress sequence = 0 (compress => encrypt)
-            console.log(pgm + 'key = ' + key + '. lzma compress sequence 2 was better than lzstring compress and/or lzma compress sequence = 0 (compress => encrypt)');
-            // find storage flag and save new compressed value
-            var storage_options = {compress: 2, encrypt: 1, sequence: 1};
-            var bin_key = storage_options_bin_key(storage_options);
-            var storage_flag = storage_flag_index[bin_key];
-            if (!storage_flag) {
-                console.log(pgm + 'Warning. key ' + key + ' was not optimized. Could not found storage flag for storage options = ' + JSON.stringify(storage_options));
-                return;
-            }
-            value = storage_flag + value;
-            // save
-            if (session) session_storage[key] = value; // sessionStorage.setItem(key, value);
-            else local_storage[key] = value ; // localStorage.setItem(key, value);
-        }, null);
-    } // lzma_compress1
-    function lzma_compress0(key, value, session, password, length) {
-        var pgm = 'lzma_compress0: ';
-        var save_value = value;
-        // start compress
-        // var lzma = new LZMA;
-        LZMA.compress(value, 1, function (value) {
-            // compress result received
-            console.log(pgm + 'compress result received. value = ' + value);
-            if (password) value = encrypt(value, password);
-            if (value.length < length) {
-                // lzma compress was better than lzstring compress
-                console.log(pgm + 'key = ' + key + '. lzma compress was better than lzstring compress');
-                // find storage flag and save new compressed value
-                var storage_options = {compress: 2, encrypt: (password ? 1 : 0), sequence: 0};
-                var bin_key = storage_options_bin_key(storage_options);
-                var storage_flag = storage_flag_index[bin_key];
-                if (!storage_flag) {
-                    console.log(pgm + 'Warning. key ' + key + ' was not optimized. Could not found storage flag for storage options = ' + JSON.stringify(storage_options));
-                    return;
-                }
-                value = storage_flag + value;
-                // save
-                if (session) session_storage[key] = value; // sessionStorage.setItem(key, value);
-                else local_storage[key] = value ; // localStorage.setItem(key, value);
-                length = value.length - 1;
-            }
-            ;
-            // start start_lzma_compress1 if encrypted - sequence = 1 - encrypt before compress
-            if (password) lzma_compress1(key, save_value, session, password, length);
-        }, null);
-    } // check_lzma_compress
 
     // look storage rules for key. add default values and write warning to console log when using defaults
     function get_local_storage_rule(key) {
@@ -763,11 +509,6 @@ var MoneyNetworkHelper = (function () {
         // if (key.match(/oauth/)) console.log('setItem. key = ' + key + ', value = ' + value) ;
         if (rule.session) session_storage[key] = value; // sessionStorage.setItem(key, value);
         else local_storage[key] = value; // localStorage.setItem(key, value);
-        // optimize compression for saved value
-
-        // todo: disabled until I find a method to convert byte array returned from LZMA.compress into an valid utf-16 string
-        // check if lzma compress if better than lzstring compress
-        // if (rule.compress) lzma_compress0(key, save_value, rule.session, password, value.length-1) ;
     } // setItem
 
     function removeItem(key) {
@@ -825,7 +566,6 @@ var MoneyNetworkHelper = (function () {
                     else texts.push(JSON.stringify(arguments[i]));
             } // switch
         }
-        ;
         // strip empty fields from end of sha256 input
         while ((texts.length > 0) && (texts[texts.length - 1] == '')) texts.length = texts.length - 1;
         var text = texts.length == 0 ? '' : texts.join(',');
@@ -834,26 +574,60 @@ var MoneyNetworkHelper = (function () {
         return sha256;
     } // sha256
 
+    // return a random number between 0 and 1 (not included).
+    // As Math.random but using Web Crypto API.
+    // https://developer.mozilla.org/en-US/docs/Web/API/RandomSource/getRandomValues
+    // todo: some helper JS libs are using Math.random: for example bitcoinjs and jsencrypt ...
+    var random = Math.random ;
+    (function () {
+        if (!window.crypto) return ;
+        if (!window.crypto.getRandomValues) return ;
+        random = function () {
+            var array, str, reverse_str, i ;
+            array = new Uint32Array(2);
+            window.crypto.getRandomValues(array);
+            str = '' + array[0] + array[1] ;
+            for (i = str.length - 1, reverse_str = '0.'; i >= 0; reverse_str += str[i--]) { } ;
+            return parseFloat(reverse_str) ;
+        }
+    })() ;
+    // console.log(module + 'random = ' + random) ;
+
     // generate password - used as key for local storage encryption and used in client to client communication (symmetric encryption)
     function generate_random_password(length) {
-        var character_set = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789![]{}#%&/()=?+-:;_-.@$|£';
+        var character_set = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789![]{}#%&/()=?+-:;_-.@$|£';
         var password = [], index, char;
         for (var i = 0; i < length; i++) {
-            index = Math.floor(Math.random() * character_set.length);
+            index = Math.floor(random() * character_set.length);
             char = character_set.substr(index, 1);
             password.push(char);
         }
-        ;
         return password.join('');
     } // generate_random_password
+
+
+    // post login. add/update pubkey2 (used in ZeroNet CryptMessage plugin)
+    function get_cryptmessage_pubkey2 () {
+        var pgm = module + '.get_cryptmessage_pubkey2: ' ;
+        var old_pubkey2 = getItem('pubkey2') ;
+        // get pubkey2 for this userid
+        var userid = parseInt(getItem('userid')) ;
+        ZeroFrame.cmd("userPublickey", [userid], function (pubkey2) {
+            if (old_pubkey2 == pubkey2) return ;
+            if (old_pubkey2) console.log(pgm + 'updating pubkey2. user must have switched ZeroNet certificate') ;
+            setItem('pubkey2', pubkey2) ;
+            ls_save() ;
+        }); // userPublickey
+    } // get_cryptmessage_pubkey2
+
 
     // client login (password from device_login_form form)
     // 0 = invalid password, > 0 : userid
     // use create_new_account = true to force create a new user account
     // support for more than one user account
-    function client_login(password, create_new_account) {
+    function client_login(password, create_new_account, keysize) {
         var pgm = module + '.client_login: ' ;
-        var password_sha256, passwords_s, passwords_a, i, userid, did, crypt, pubkey, prvkey, prvkey_aes, giftid_key;
+        var password_sha256, passwords_s, passwords_a, i, userid, crypt, pubkey, prvkey;
         password_sha256 = sha256(password);
         // passwords: array with hashed passwords. size = number of accounts
         passwords_s = getItem('passwords');
@@ -871,26 +645,30 @@ var MoneyNetworkHelper = (function () {
                 // save login
                 setItem('userid', userid);
                 setItem('password', password);
+                get_cryptmessage_pubkey2() ;
+                load_user_setup() ;
                 return userid;
             }
         }
         // password was not found
         if (create_new_account) {
             // create new account
-            console.log(pgm + 'create new account');
+            if (keysize == 256) keysize = 1024 ; // user has selected cryptMessage. generate a 1024 JSEncrypt key anyway
+            else if ([1024,2048,4096,8192].indexOf(keysize) == -1) keysize = 2048 ;
+            // console.log(pgm + 'create new account. JSEncrypt keysize = ' + keysize);
             userid = passwords_a.length + 1; // sequence = number of user accounts in local storage
             // setup new account
             passwords_a.push(password_sha256);
             passwords_s = JSON.stringify(passwords_a);
             // generate key pair for client to client RSA encryption
-            crypt = new JSEncrypt({default_key_size: 2048});
+            crypt = new JSEncrypt({default_key_size: keysize});
             crypt.getKey();
             pubkey = crypt.getPublicKey();
             prvkey = crypt.getPrivateKey();
             // console.log(pgm + 'new pubkey = ' + pubkey);
             // console.log(pgm + 'new prvkey = ' + prvkey);
             // key for symmetric encryption in localStorage - 80-120 characters (avoid using human text in encryption)
-            var key_lng = Math.round(Math.random() * 40) + 80;
+            var key_lng = Math.round(random() * 40) + 80;
             var key = MoneyNetworkHelper.generate_random_password(key_lng);
             // save login in sessionStorage
             // note that password is saved in clear text in sessionStorage
@@ -904,6 +682,7 @@ var MoneyNetworkHelper = (function () {
             setItem('passwords', passwords_s); // array with sha256 hashed passwords. length = number of accounts
             // send local storage updates to ZeroFrame
             ls_save();
+            get_cryptmessage_pubkey2() ;
             return userid;
         }
         // invalid password (create_new_account=false)
@@ -914,7 +693,31 @@ var MoneyNetworkHelper = (function () {
     // client logout - clear all data in sessisonStorage (userid and password)
     function client_logout() {
         for (var key in session_storage) delete session_storage[key] ;
+        for (var key in user_setup) delete user_setup[key] ;
     } // client_logout
+
+    function change_password (old_password, new_password) {
+        var password, userid, passwords, key, old_password_sha256, new_password_sha256, i  ;
+        userid = parseInt(getItem('userid')) ;
+        passwords = JSON.parse(getItem('passwords')) ;
+        password = getItem('password') ;
+        key = getItem('key') ;
+        old_password_sha256 = sha256(old_password) ;
+        new_password_sha256 = sha256(new_password) ;
+        if (!userid) return 'Not logged in' ;
+        if (password != old_password) return 'Invalid old password' ;
+        if (passwords[userid-1] != old_password_sha256) return 'Invalid old password' ;
+        for (i=0 ; i<passwords.length ; i++) {
+            if (passwords[i] == new_password_sha256) return 'Invalid new password' ;
+        }
+        // ready to change password
+        passwords[userid-1] = new_password_sha256 ;
+        setItem('password', new_password) ;
+        setItem('key', key) ;
+        setItem('passwords', JSON.stringify(passwords)) ;
+        ls_save() ;
+        return null ;
+    } // change_password
 
     // delete any existing guest account before creating a new guest account
     function delete_guest_account () {
@@ -956,7 +759,25 @@ var MoneyNetworkHelper = (function () {
                 }
             },
             "local_msg_seq": { "type": 'integer'},
-            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'}
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype', 'search'],
         "additionalProperties": false
@@ -967,7 +788,25 @@ var MoneyNetworkHelper = (function () {
         "properties": {
             "msgtype": { "type": 'string', pattern: '^contact removed$'},
             "local_msg_seq": { "type": 'integer'},
-            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'}
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype'],
         "additionalProperties": false
@@ -975,14 +814,33 @@ var MoneyNetworkHelper = (function () {
     json_schemas['chat msg'] = {
         "type": 'object',
         "title": 'Send chat message to contact',
-        "description": 'Message is required unless delete old chat message. old_local_msg_seq is reference to old chat message to be changed or deleted. Image must be base64uri',
+        "description": 'Message is required unless delete old chat message. old_local_msg_seq is reference to old chat message to be changed or deleted. Image must be base64uri. sent_at and message_sha256 are used when resending lost messages',
         "properties": {
             "msgtype": { "type": 'string', pattern: '^chat msg$'},
             "message": { "type": 'string'},
             "local_msg_seq": { "type": 'integer'},
             "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
             "old_local_msg_seq": { "type": 'integer' },
-            "image": { "type": 'string'}
+            "image": { "type": [ 'string', 'boolean'] },
+            "feedback": {
+                "type": 'object',
+                "description": 'Feedback info. Has message been received? Normal chat, type integer, with local_msg_seq. Group chat, type string, with participant, local_msg_seq',
+                "properties": {
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": ['integer', 'string'] },
+                        "minItems": 1
+                    },
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": ['integer', 'string'] },
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype'],
         "additionalProperties": false
@@ -995,7 +853,25 @@ var MoneyNetworkHelper = (function () {
             "msgtype": { "type": 'string', pattern: '^verify$'},
             "password_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
             "local_msg_seq": { "type": 'integer'},
-            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'}
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype', 'password_sha256'],
         "additionalProperties": false
@@ -1007,7 +883,25 @@ var MoneyNetworkHelper = (function () {
             "msgtype": { "type": 'string', pattern: '^verified$'},
             "password": { "type": 'string'},
             "local_msg_seq": { "type": 'integer'},
-            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'}
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype', 'password'],
         "additionalProperties": false
@@ -1019,9 +913,91 @@ var MoneyNetworkHelper = (function () {
             "msgtype": { "type": 'string', pattern: '^received$'},
             "remote_msg_seq": { "type": 'integer'},
             "local_msg_seq": { "type": 'integer'},
-            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'}
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$' }
         },
         "required": ['msgtype', 'remote_msg_seq'],
+        "additionalProperties": false
+    } ;
+    json_schemas['group chat'] = {
+        "type": 'object',
+        "title": 'Start group chat. Send group chat password to participants in chat',
+        "properties": {
+            "msgtype": { "type": 'string', pattern: '^group chat$'},
+            "participants": {
+                "type": 'array',
+                "items": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+                "minItems": 1
+            },
+            "password": { "type": 'string' },
+            "local_msg_seq": { "type": 'integer'},
+            "sender_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "feedback": {
+                "type": 'object',
+                "properties": {
+                    "received": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    },
+                    "sent": {
+                        "type": 'array',
+                        "items": { "type": 'integer'},
+                        "minItems": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "sent_at": { "type": 'integer'}
+        },
+        "required": ['msgtype', 'participants', 'password'],
+        "additionalProperties": false
+    } ;
+    json_schemas['lost msg'] = {
+        "type": 'object',
+        "title": 'Lost message notification in UI',
+        "description": 'Lost message detected in feedback information. See add_feedback_info and receive_feedback_info',
+        "properties": {
+            "msgtype": { "type": 'string', pattern: '^lost msg$'},
+            "local_msg_seq": { "type": 'integer'}
+        },
+        "required": ['msgtype', 'local_msg_seq'],
+        "additionalProperties": false
+    } ;
+    json_schemas['lost msg2'] = {
+        "type": 'object',
+        "title": 'Lost message notification in UI',
+        "description": 'Decrypt error when reading message. Happens for cryptMessage encrypted to an other ZeroNet certificate. User has switched certificate. See process_incoming_cryptmessage. cert_user_ids are possible ZeroNet certificates for decryption. Unique and res are original parameters for process_incoming_cryptmessage call',
+        "properties": {
+            "msgtype": { "type": 'string', pattern: '^lost msg2$'},
+            "message_sha256": { "type": 'string', "pattern": '^[0-9a-f]{64}$'},
+            "cert_user_ids": {
+                "type": 'array',
+                "items": { "type": 'string' },
+                "minItems": 1},
+            "unique_id": { "type": 'string', "pattern": '^[0-9a-f]{64}$' },
+            "res": {
+                "type": 'object'
+            }
+        },
+        "required": ['msgtype', 'message_sha256', 'cert_user_ids', 'unique_id', 'res'],
         "additionalProperties": false
     } ;
 
@@ -1052,26 +1028,116 @@ var MoneyNetworkHelper = (function () {
         return error + '.<br>Error ' + json_errors ;
     } // validate_json
 
+    // for debug. copy of user settings from Account page
+    var user_setup = {} ;
+    function load_user_setup() {
+        var setup = getItem('setup') ;
+        if (!setup) return ;
+        setup = JSON.parse(setup);
+        for (var key in user_setup) delete user_setup[key] ;
+        for (key in setup) user_setup[key] = setup[key] ;
+    } // load_user_setup
+
+    // output debug info in log. For key, see user page and setup.debug hash
+    // keys: simple expressions are supported. For example inbox && unencrypted
+    function debug (keys, text) {
+        var pgm = module + '. debug: ' ;
+        if (!user_setup || !user_setup.debug || !user_setup.debug.enabled) return ;
+        // console.log(pgm + 'old keys = ' + keys);
+        // console.log(pgm + 'user_setup = ' + JSON.stringify(user_setup));
+        var debug_keys = [
+            'show_contact_action_filter', 'contact_order_by', 'chat_order_by', 'chat_filter', 'invalid_avatars',
+            'unencrypted', 'encrypted', 'file_done', 'select', 'inbox', 'outbox', 'data_cleanup', 'no_pubkey',
+            'edit_alias', 'feedback_info', 'lost_message', 'spam_filter', 'public_chat', 'infinite_scroll'];
+        var i, key, debug_value, regexp ;
+        for (i=0 ; i<debug_keys.length ; i++) {
+            key = debug_keys[i] ;
+            if (user_setup.debug[key]) debug_value = 'true' ;
+            else debug_value = 'false' ;
+            regexp = new RegExp(key, 'g');
+            keys = keys.replace(regexp, debug_value) ;
+        }
+        // console.log(pgm + 'new keys = ' + keys);
+        var regexp ;
+        try {
+            if (eval(keys)) {
+                // shorten long strings. for example images
+                regexp = new RegExp('"([^"]{500,}?)"','g');
+                text = text.replace(regexp, function(match, $1, $2, offset, original) { return $1.substr(0,480) + '...' }) ;
+                console.log(text) ;
+            }
+        }
+        catch (err) {
+            console.log(pgm + 'invalid call. keys = ' + keys + ', text = ' + text + ', error = ' + err.message) ;
+        }
+    } // debug
+
+    // as JSON.stringify but shorten long message and image. Also used in debug
+    function stringify (json) {
+        var str = JSON.stringify(json) ;
+        var regexp = new RegExp('"([^"]{500,}?)"','g');
+        return str.replace(regexp, function(match, $1, $2, offset, original) { return $1.substr(0,480) + '...' }) ;
+    }
+
+    var fake_user_names = ["Annalise Glover", "Hollis Ortiz", "Bertha Schaefer", "Santino Grant", "Elbert Greenfelder",
+        "Katharina Leffler", "Ernie Schroeder", "Layla Stracke", "Estevan Howell", "Bonnie Torp", "Nolan Bogisich",
+        "Lisandro Walsh", "Colten Gislason", "Allen Davis", "Dayne Feest", "Santiago Ebert", "Bo Johnson", "Kelli Mraz",
+        "Maritza Kling", "Antonette Donnelly", "Leanna Schuppe", "Melyna Heathcote", "Theo Bins", "Vernice Keebler",
+        "Tressa Balistreri", "Frank Steuber", "Tiffany Bode", "Zion Zemlak", "Sabrina Bradtke", "Raphaelle Conroy",
+        "Lizzie Bogisich", "Kaci Russel", "Josephine Ernser", "Stephania Cremin", "Alexane Gaylord", "Theo Adams",
+        "Carmel Mayert", "Larissa Powlowski", "Gisselle Effertz", "Cordelia Boyer", "Josianne Beatty", "Jo Von",
+        "Timothy Weissnat", "Neha Kerluke", "Dan Wiza", "Kelley Klein", "Demetris Morissette", "Jessika Leuschke",
+        "Jena Runolfsdottir", "Willis Bradtke", "Gloria Fay", "Brandy Collier", "Brad Hahn", "Boris Klocko", "Ismael Yost",
+        "Ramona Stroman", "Melba Schimmel", "Charlene Auer", "Lonny Denesik", "Geo Koss", "Oleta Bauch",
+        "Anderson Runolfsdottir", "Harry Conn", "Yasmine Ward", "Neil Hahn", "Nolan Hilll", "Spencer Hagenes",
+        "Leann VonRueden", "Ludie Ritchie", "Wayne Larson", "Nelle Batz", "Rosella Lynch", "London Oberbrunner",
+        "Frederick Nienow", "Daphne Dietrich", "Maegan Keebler", "Woodrow Feil", "Stefan Wiza", "Lindsay Gibson",
+        "Martina Larson", "Wendell Jacobi", "Libbie Rogahn", "Glenda Ryan", "Bethany Cassin", "Hannah Ryan",
+        "Chaya Schmidt", "Nikita Nolan", "Vivian Moore", "Clemens Jast", "Emilia Hagenes", "Lilyan Shields",
+        "Johann Jacobs", "Dandre Breitenberg", "Graciela Johnson", "Lera Swift", "Otho Reynolds", "Orrin Reynolds",
+        "Theodora Bartoletti", "Annalise Gorczany", "Rubie Jacobson", "Gaetano Osinski", "Yvonne Heidenreich",
+        "Diana Stoltenberg", "Andres Harris", "Randall Gibson", "Gust Donnelly", "Brandy Hayes", "Lew Stroman",
+        "Ali Monahan", "Ralph Hessel", "Kennith Berge", "Bryon Graham", "Susan Corwin", "Tania Gerhold", "Ransom Abshire",
+        "Kasey Denesik", "Tanya Corwin", "Lora Hahn", "Erna Gerhold"
+    ];
+    function get_fake_name() {
+        var index = Math.floor(random() * fake_user_names.length);
+        return  fake_user_names[index] ;
+    }
 
     // export helpers
     return {
         // local storage helpers
         get_public_avatars: get_public_avatars,
-        z_contact_search: z_contact_search,
+        get_last_online: get_last_online,
+        set_last_online: set_last_online,
         getItem: getItem,
         getItemSize: getItemSize,
         setItem: setItem,
         removeItem: removeItem,
+        ls_get: ls_get,
         ls_bind: ls_bind,
         ls_save: ls_save,
+        ls_clear: ls_clear,
+        utoa: utoa, atou: atou,
+        ls_export: ls_export,
+        ls_import: ls_import,
         getUserId: getUserId,
         client_login: client_login,
         client_logout: client_logout,
+        change_password: change_password,
         delete_guest_account: delete_guest_account,
         generate_random_password: generate_random_password,
         encrypt: encrypt,
         decrypt: decrypt,
-        validate_json: validate_json
+        compress1: compress1,
+        decompress1: decompress1,
+        validate_json: validate_json,
+        load_user_setup: load_user_setup,
+        debug: debug,
+        stringify: stringify,
+        get_fake_name: get_fake_name,
+        random: random
     };
 })();
 // MoneyNetworkHelper end
